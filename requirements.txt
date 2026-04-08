@@ -1,0 +1,22 @@
+# Транскрибация
+faster-whisper
+
+# Claude API
+anthropic>=0.40.0
+
+# Валидация данных
+pydantic>=2.0
+pydantic-settings>=2.0
+
+# Надёжность
+tenacity>=8.0
+
+# Логирование
+loguru>=0.7
+
+# Тесты
+pytest>=7.0
+pytest-mock>=3.0
+
+# ffmpeg — системный (устанавливается отдельно, не через pip)
+# sudo apt install ffmpeg  /  brew install ffmpeg

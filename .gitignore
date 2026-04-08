@@ -1,0 +1,35 @@
+# Environment variables
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# macOS
+.DS_Store
+
+# Output / temp files
+output/
+temp/
+checkpoints/
+
+# Models (large binary files)
+models/*.bin
+models/*.pt
+models/*.pth
+models/*.onnx
+models/*.safetensors
