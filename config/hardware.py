@@ -64,8 +64,8 @@ def detect_hardware() -> HardwareProfile:
             )
         elif vram >= 5_000:
             return HardwareProfile(
-                device="cpu", compute_type="int8", model_size="medium",
-                label=f"Windows/Linux GPU detected ({vram // 1024}GB) but CUDA Toolkit missing → cpu+int8",
+                device="cuda", compute_type="int8", model_size="medium",
+                label=f"Windows/Linux GPU — {vram // 1024}GB VRAM → medium",
             )
         elif vram >= 2_000:
             return HardwareProfile(
