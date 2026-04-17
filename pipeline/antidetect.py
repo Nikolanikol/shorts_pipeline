@@ -173,6 +173,8 @@ class AntiDetect:
             raw_clip_path=str(input_path),
             processed_clip_path=str(output_path),
             filters_applied=filters,
+            start=clip.start,
+            end=clip.end,
         )
 
     def process(self, clips: list[RawClip]) -> list[ProcessedClip]:

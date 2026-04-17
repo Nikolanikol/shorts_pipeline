@@ -96,6 +96,8 @@ class ProcessedClip(BaseModel):
     raw_clip_path: str
     processed_clip_path: str
     filters_applied: list[str] = Field(default_factory=list)
+    start: float = Field(default=0.0, description="Начало клипа в исходном видео (сек)")
+    end: float = Field(default=0.0, description="Конец клипа в исходном видео (сек)")
 
 
 # ---------------------------------------------------------------------------

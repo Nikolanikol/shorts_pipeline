@@ -251,8 +251,8 @@ class Formatter:
                 video_path=str(output_path),
                 output_path=str(sub_output),
                 transcript=transcript,
-                start_offset=clip.start if hasattr(clip, "start") else 0.0,
-                end_offset=clip.end if hasattr(clip, "end") else None,
+                start_offset=clip.start,
+                end_offset=clip.end,
             )
             if result_path == str(sub_output) and sub_output.exists():
                 output_path.unlink()
