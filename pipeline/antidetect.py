@@ -132,13 +132,15 @@ class AntiDetect:
             f"  {input_path.name}: speed={speed}, noise={vf.split('alls=')[1].split(':')[0]}"
         )
 
+        from config.encoder import get_video_encoder
+        enc = get_video_encoder()
         cmd = [
             "ffmpeg",
             "-i", str(input_path),
             "-vf", vf,
             "-af", af,
-            "-map_metadata", "-1",          # стрипаем C2PA и все метаданные
-            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+            "-map_metadata", "-1",
+            *enc.args(),
             "-c:a", "aac",
             "-y",
             str(output_path),

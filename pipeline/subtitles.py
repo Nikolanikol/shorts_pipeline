@@ -14,6 +14,37 @@ from loguru import logger
 from models.schemas import Transcript, FinalShort
 
 
+MAX_LINE_CHARS = 42  # максимум символов в строке субтитра для 1080px
+
+
+def _wrap_text(text: str, max_chars: int = MAX_LINE_CHARS) -> str:
+    """
+    Переносит длинный текст на несколько строк.
+    Разбивает по словам, не более max_chars в строке.
+    """
+    words = text.strip().split()
+    lines = []
+    current = ""
+    for word in words:
+        if len(current) + len(word) + 1 <= max_chars:
+            current = f"{current} {word}".strip()
+        else:
+            if current:
+                lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return "\n".join(lines)
+
+
+def _fmt_time(seconds: float) -> str:
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    ms = int((seconds % 1) * 1000)
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+
 def _build_srt(transcript: Transcript, start_offset: float, end_offset: float) -> str:
     """
     Генерирует SRT-строку для отрезка видео [start_offset, end_offset].
@@ -23,7 +54,6 @@ def _build_srt(transcript: Transcript, start_offset: float, end_offset: float) -
     index = 1
 
     for seg in transcript.segments:
-        # Берём только сегменты, которые попадают в окно клипа
         if seg.end <= start_offset or seg.start >= end_offset:
             continue
 
@@ -33,16 +63,11 @@ def _build_srt(transcript: Transcript, start_offset: float, end_offset: float) -
         if seg_end <= seg_start:
             continue
 
-        def fmt(seconds: float) -> str:
-            h = int(seconds // 3600)
-            m = int((seconds % 3600) // 60)
-            s = int(seconds % 60)
-            ms = int((seconds % 1) * 1000)
-            return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+        text = _wrap_text(seg.text.strip())
 
         lines.append(str(index))
-        lines.append(f"{fmt(seg_start)} --> {fmt(seg_end)}")
-        lines.append(seg.text.strip())
+        lines.append(f"{_fmt_time(seg_start)} --> {_fmt_time(seg_end)}")
+        lines.append(text)
         lines.append("")
         index += 1
 
@@ -89,26 +114,28 @@ def burn_subtitles(
         # Экранируем путь для ffmpeg subtitles фильтра (Windows: \ → \\)
         srt_escaped = srt_path.replace("\\", "\\\\").replace(":", "\\:")
 
-        # Стиль: жирный белый текст, чёрная обводка, по центру снизу
+        # Стиль TikTok: жирный белый текст, чёрная обводка, по центру снизу
         style = (
             "FontName=Arial,"
-            "FontSize=18,"
+            "FontSize=26,"                # 26px — хорошо читается на 1080x1920
             "Bold=1,"
-            "PrimaryColour=&H00FFFFFF,"   # белый
+            "PrimaryColour=&H00FFFFFF,"   # белый текст
             "OutlineColour=&H00000000,"   # чёрная обводка
-            "Outline=2,"
+            "Outline=3,"                  # толщина обводки
             "Shadow=1,"
             "Alignment=2,"                # снизу по центру
-            "MarginV=60"                  # отступ от низа
+            "MarginV=80"                  # отступ от низа
         )
 
         vf = f"subtitles='{srt_escaped}':force_style='{style}'"
 
+        from config.encoder import get_video_encoder
+        enc = get_video_encoder()
         cmd = [
             "ffmpeg",
             "-i", video_path,
             "-vf", vf,
-            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+            *enc.args(),
             "-c:a", "copy",
             "-y",
             output_path,

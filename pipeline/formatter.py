@@ -217,13 +217,15 @@ class Formatter:
             platform.fps,
         )
 
+        from config.encoder import get_video_encoder
+        enc = get_video_encoder()
         cmd = [
             "ffmpeg",
             "-i", input_for_format,
             "-filter_complex", filtergraph,
             "-map", "[v]",
             "-map", "0:a",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+            *enc.args(),
             "-c:a", "aac", "-ar", "44100",
             "-movflags", "+faststart",
             "-y",

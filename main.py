@@ -9,7 +9,6 @@ Shorts Pipeline — точка входа.
 """
 
 import argparse
-import hashlib
 import json
 import subprocess
 import sys
@@ -23,12 +22,16 @@ from config.settings import settings
 def _check_dependencies() -> None:
     """Проверяет наличие ffmpeg и ffprobe перед запуском."""
     for tool in ("ffmpeg", "ffprobe"):
-        result = subprocess.run(
-            [tool, "-version"], capture_output=True
-        )
-        if result.returncode != 0:
+        try:
+            result = subprocess.run(
+                [tool, "-version"], capture_output=True, timeout=10
+            )
+            if result.returncode != 0:
+                raise FileNotFoundError
+        except (FileNotFoundError, OSError):
             logger.error(
-                f"'{tool}' не найден. Установи ffmpeg: https://ffmpeg.org/download.html"
+                f"'{tool}' не найден. Установи ffmpeg: https://ffmpeg.org/download.html\n"
+                f"Или запускай через run.bat"
             )
             sys.exit(1)
     logger.debug("ffmpeg / ffprobe — OK")
@@ -40,8 +43,17 @@ from pipeline.formatter import Formatter
 
 
 def _video_id(video_path: Path) -> str:
-    """Стабильный ID на основе имени файла — один и тот же запуск = один ID."""
-    return hashlib.md5(video_path.name.encode()).hexdigest()[:8]
+    """
+    ID видео = очищенное имя файла без расширения.
+    Пример: "Аватар_Легенда_об_Аанге_1_сезон_-_1_серия.mp4" → "Аватар_Легенда_об_Аанге_1_сезон_-_1_серия"
+    Запрещённые символы заменяются на "_".
+    """
+    stem = video_path.stem  # имя без расширения
+    # Убираем символы запрещённые в Windows путях
+    for ch in r'\/:*?"<>|':
+        stem = stem.replace(ch, "_")
+    # Обрезаем до 80 символов чтобы путь не был слишком длинным
+    return stem[:80]
 
 
 def load_checkpoint(video_id: str) -> PipelineState | None:

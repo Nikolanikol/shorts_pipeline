@@ -61,11 +61,13 @@ class Transcriber:
                 normalized_path.unlink()
 
         logger.info(f"Нормализация видео → {normalized_path.name}")
+        from config.encoder import get_video_encoder
+        enc = get_video_encoder()
         cmd = [
             "ffmpeg", "-i", str(video_path),
-            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            *enc.args(quality=18),
             "-c:a", "aac", "-ar", "44100",
-            "-y",  # перезаписать если есть
+            "-y",
             str(normalized_path),
         ]
         result = subprocess.run(cmd, capture_output=True, text=True)

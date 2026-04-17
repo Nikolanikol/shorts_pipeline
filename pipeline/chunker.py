@@ -144,12 +144,14 @@ class Chunker:
     ) -> None:
         """Нарезает один клип через ffmpeg."""
         duration = end - start
+        from config.encoder import get_video_encoder
+        enc = get_video_encoder()
         cmd = [
             "ffmpeg",
             "-ss", str(start),
             "-i", str(video_path),
             "-t", str(duration),
-            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            *enc.args(quality=18),
             "-c:a", "aac",
             "-avoid_negative_ts", "make_zero",
             "-y",
