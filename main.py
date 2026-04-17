@@ -11,12 +11,27 @@ Shorts Pipeline — точка входа.
 import argparse
 import hashlib
 import json
+import subprocess
 import sys
 from pathlib import Path
 
 from loguru import logger
 
 from config.settings import settings
+
+
+def _check_dependencies() -> None:
+    """Проверяет наличие ffmpeg и ffprobe перед запуском."""
+    for tool in ("ffmpeg", "ffprobe"):
+        result = subprocess.run(
+            [tool, "-version"], capture_output=True
+        )
+        if result.returncode != 0:
+            logger.error(
+                f"'{tool}' не найден. Установи ffmpeg: https://ffmpeg.org/download.html"
+            )
+            sys.exit(1)
+    logger.debug("ffmpeg / ffprobe — OK")
 from models.schemas import PipelineState, Transcript
 from pipeline.transcriber import Transcriber
 from pipeline.chunker import Chunker
@@ -166,6 +181,7 @@ def run_pipeline(
         finals = formatter.process(
             clips=processed_clips,
             platforms=platforms,
+            transcript=transcript,
         )
         state.format_done = True
         state.final_shorts = finals
@@ -196,9 +212,9 @@ def main():
     parser.add_argument("video", help="Путь к входному видео файлу")
     parser.add_argument(
         "--platforms", nargs="+",
-        default=["youtube_shorts"],
-        choices=["youtube_shorts", "tiktok", "reels"],
-        help="Целевые платформы (по умолчанию: youtube_shorts)"
+        default=["tiktok"],
+        choices=["youtube_shorts", "tiktok", "tiktok_long", "reels"],
+        help="Целевые платформы (по умолчанию: tiktok)"
     )
     parser.add_argument(
         "--skip-antidetect", action="store_true",
@@ -219,6 +235,8 @@ def main():
         rotation="10 MB",
         level="DEBUG",
     )
+
+    _check_dependencies()
 
     run_pipeline(
         video_path=args.video,

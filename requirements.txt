@@ -18,5 +18,10 @@ loguru>=0.7
 pytest>=7.0
 pytest-mock>=3.0
 
+# Авто-публикация TikTok
+selenium>=4.0
+webdriver-manager>=4.0
+
 # ffmpeg — системный (устанавливается отдельно, не через pip)
+# Windows: https://ffmpeg.org/download.html
 # sudo apt install ffmpeg  /  brew install ffmpeg

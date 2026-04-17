@@ -152,19 +152,27 @@ class AntiDetect:
         if not output_path.exists() or output_path.stat().st_size == 0:
             raise RuntimeError(f"Выходной файл пустой: {output_path}")
 
+        # Замена оригинального звука на фоновую музыку (если папка music/ не пуста)
+        from pipeline.audio_replace import replace_audio
+        from config.settings import settings
+        if settings.music_dir.exists() and any(settings.music_dir.iterdir()):
+            music_output = output_path.parent / f"{output_path.stem}_music{output_path.suffix}"
+            final_path = replace_audio(str(output_path), str(music_output))
+            if final_path == str(music_output) and music_output.exists():
+                output_path.unlink()
+                output_path = music_output
+            filters = ["zoom_crop", "speed_variation", "saturation", "audio_tempo",
+                       "video_noise", "metadata_strip", "audio_replace"]
+        else:
+            filters = ["zoom_crop", "speed_variation", "saturation", "audio_tempo",
+                       "video_noise", "metadata_strip"]
+
         return ProcessedClip(
             video_id=clip.video_id,
             scene_index=clip.scene_index,
             raw_clip_path=str(input_path),
             processed_clip_path=str(output_path),
-            filters_applied=[
-                "zoom_crop",
-                "speed_variation",
-                "saturation",
-                "audio_tempo",
-                "video_noise",
-                "metadata_strip",
-            ],
+            filters_applied=filters,
         )
 
     def process(self, clips: list[RawClip]) -> list[ProcessedClip]:

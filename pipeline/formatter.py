@@ -18,7 +18,7 @@ from pathlib import Path
 from loguru import logger
 
 from config.settings import settings
-from models.schemas import ProcessedClip, FinalShort, Platform
+from models.schemas import ProcessedClip, FinalShort, Platform, Transcript
 
 
 # ---------------------------------------------------------------------------
@@ -29,17 +29,22 @@ PLATFORMS: dict[str, Platform] = {
     "youtube_shorts": Platform(
         name="youtube_shorts",
         width=1080, height=1920,
-        fps=30, max_duration=60,
+        fps=30, max_duration=60,       # YouTube Shorts: строго до 60 сек
     ),
     "tiktok": Platform(
         name="tiktok",
         width=1080, height=1920,
-        fps=30, max_duration=60,
+        fps=30, max_duration=180,      # TikTok: до 3 мин — оптимум охвата
+    ),
+    "tiktok_long": Platform(
+        name="tiktok_long",
+        width=1080, height=1920,
+        fps=30, max_duration=600,      # TikTok длинные: до 10 мин
     ),
     "reels": Platform(
         name="reels",
         width=1080, height=1920,
-        fps=30, max_duration=90,
+        fps=30, max_duration=90,       # Instagram Reels: до 90 сек
     ),
 }
 
@@ -164,6 +169,7 @@ class Formatter:
         self,
         clip: ProcessedClip,
         platform_name: str = "youtube_shorts",
+        transcript: Transcript = None,
     ) -> FinalShort:
         """
         Форматирует один клип под платформу.
@@ -237,6 +243,21 @@ class Formatter:
         if trimmed_path.exists():
             trimmed_path.unlink()
 
+        # Сжигаем субтитры если есть транскрипт
+        if transcript is not None:
+            from pipeline.subtitles import burn_subtitles
+            sub_output = out_dir / f"{stem}_{platform_name}_sub.mp4"
+            result_path = burn_subtitles(
+                video_path=str(output_path),
+                output_path=str(sub_output),
+                transcript=transcript,
+                start_offset=clip.start if hasattr(clip, "start") else 0.0,
+                end_offset=clip.end if hasattr(clip, "end") else None,
+            )
+            if result_path == str(sub_output) and sub_output.exists():
+                output_path.unlink()
+                output_path = sub_output
+
         size_mb = output_path.stat().st_size / 1024 / 1024
         logger.info(f"  ✓ {output_path.name}: {size_mb:.1f} MB")
 
@@ -252,6 +273,7 @@ class Formatter:
         self,
         clips: list[ProcessedClip],
         platforms: list[str] = None,
+        transcript: Transcript = None,
     ) -> list[FinalShort]:
         """
         Форматирует все клипы под одну или несколько платформ.
@@ -275,7 +297,7 @@ class Formatter:
             for platform_name in platforms:
                 counter += 1
                 logger.info(f"[{counter}/{total}] {Path(clip.processed_clip_path).name} → {platform_name}")
-                final = self.format_clip(clip, platform_name)
+                final = self.format_clip(clip, platform_name, transcript=transcript)
                 finals.append(final)
 
         logger.info(f"Formatter завершён: {len(finals)} готовых шортсов")

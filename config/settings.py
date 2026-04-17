@@ -5,7 +5,8 @@
 
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, model_validator
+from typing import Any
 
 
 BASE_DIR = Path(__file__).parent.parent
@@ -39,14 +40,23 @@ class Settings(BaseSettings):
     )
 
     # ---------------------------------------------------------------------------
+    # Автоопределение железа
+    # ---------------------------------------------------------------------------
+    auto_detect_hardware: bool = Field(
+        default=True,
+        description="Автоматически определять устройство и выбирать настройки Whisper"
+    )
+
+    # ---------------------------------------------------------------------------
     # Транскрибация (faster-whisper)
+    # Значения ниже используются только если auto_detect_hardware=false
     # ---------------------------------------------------------------------------
     whisper_model_size: str = Field(
-        default="large-v3",
+        default="medium",
         description="Размер модели Whisper: tiny, base, small, medium, large-v3"
     )
     whisper_device: str = Field(
-        default="cuda",
+        default="cpu",
         description="Устройство для Whisper: cuda / cpu"
     )
     whisper_compute_type: str = Field(
@@ -57,6 +67,18 @@ class Settings(BaseSettings):
         default="ru",
         description="Язык транскрибации (ru, en, ...)"
     )
+
+    @model_validator(mode="after")
+    def apply_hardware_detection(self) -> "Settings":
+        if not self.auto_detect_hardware:
+            return self
+        from config.hardware import detect_hardware, log_hardware_profile
+        profile = detect_hardware()
+        log_hardware_profile(profile)
+        self.whisper_model_size = profile.model_size
+        self.whisper_device = profile.device
+        self.whisper_compute_type = profile.compute_type
+        return self
 
     # ---------------------------------------------------------------------------
     # ffmpeg / нарезка
@@ -78,8 +100,8 @@ class Settings(BaseSettings):
     # Chunk режим (нарезка по тишине)
     # ---------------------------------------------------------------------------
     chunk_duration: int = Field(
-        default=120,
-        description="Целевая длина чанка в секундах (2 минуты)"
+        default=150,
+        description="Целевая длина чанка в секундах (2.5 минуты — укладывается в TikTok лимит 3 мин)"
     )
     chunk_search_window: int = Field(
         default=20,
@@ -108,6 +130,28 @@ class Settings(BaseSettings):
     antidetect_noise_level: int = Field(
         default=8,
         description="Уровень видеошума 0-20 (8 = визуально незаметно, но сдвигает hash)"
+    )
+
+    # ---------------------------------------------------------------------------
+    # Публикация TikTok
+    # ---------------------------------------------------------------------------
+    tiktok_kmotors_url: str = Field(
+        default="https://kmotors.ru",
+        description="Ссылка на сайт kmotors для описания поста"
+    )
+    tiktok_account_email: str = Field(default="", description="Email аккаунта TikTok")
+    tiktok_account_password: str = Field(default="", description="Пароль аккаунта TikTok")
+
+    # ---------------------------------------------------------------------------
+    # Замена звука на фоновую музыку
+    # ---------------------------------------------------------------------------
+    music_dir: Path = Field(
+        default=BASE_DIR / "music",
+        description="Папка с MP3-файлами для фоновой музыки"
+    )
+    music_volume: float = Field(
+        default=0.3,
+        description="Громкость фоновой музыки (0.0-1.0)"
     )
 
     # ---------------------------------------------------------------------------
