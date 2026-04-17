@@ -60,17 +60,18 @@ def replace_audio(video_path: str, output_path: str) -> str:
     # - duration=first: обрезаем музыку по длине видео
     # - weights: громкость оригинала=0, музыки=volume
     # Оригинальный звук убираем полностью (weight=0)
-    af = f"[0:a]volume=0[orig];[1:a]volume={volume}[music];[orig][music]amix=inputs=2:duration=first"
+    af = f"[0:a]volume=0[orig];[1:a]volume={volume}[music];[orig][music]amix=inputs=2:duration=first[aout]"
 
     cmd = [
         "ffmpeg",
         "-i", video_path,
-        "-stream_loop", "-1",  # музыка зациклена если короче видео
+        "-stream_loop", "-1",
         "-i", str(music_file),
         "-filter_complex", af,
+        "-map", "0:v",
+        "-map", "[aout]",
         "-c:v", "copy",
         "-c:a", "aac", "-ar", "44100",
-        "-map", "0:v",
         "-shortest",
         "-y",
         output_path,

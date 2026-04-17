@@ -8,6 +8,19 @@ Shorts Pipeline — точка входа.
     python main.py ../avatar0101.mp4 --skip-antidetect
 """
 
+# Добавляем CUDA DLL пути ДО любых других импортов
+import os as _os, sys as _sys
+from pathlib import Path as _Path
+for _pkg in ("nvidia/cublas/bin", "nvidia/cudnn/bin", "nvidia/cuda_runtime/bin"):
+    for _sp in _sys.path:
+        if "site-packages" in _sp:
+            _dll = _Path(_sp) / _pkg
+            if _dll.is_dir():
+                try:
+                    _os.add_dll_directory(str(_dll))
+                except Exception:
+                    pass
+
 import argparse
 import json
 import subprocess
@@ -52,8 +65,8 @@ def _video_id(video_path: Path) -> str:
     # Убираем символы запрещённые в Windows путях
     for ch in r'\/:*?"<>|':
         stem = stem.replace(ch, "_")
-    # Обрезаем до 80 символов чтобы путь не был слишком длинным
-    return stem[:80]
+    # UTF-8 safe обрезка до 80 байт (не режем кириллицу пополам)
+    return stem.encode("utf-8")[:80].decode("utf-8", errors="ignore")
 
 
 def load_checkpoint(video_id: str) -> PipelineState | None:
@@ -165,6 +178,8 @@ def run_pipeline(
                 raw_clip_path=c.clip_path,
                 processed_clip_path=c.clip_path,
                 filters_applied=[],
+                start=c.start,
+                end=c.end,
             )
             for c in raw_clips
         ]

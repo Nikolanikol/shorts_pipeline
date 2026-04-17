@@ -33,3 +33,16 @@ models/*.pt
 models/*.pth
 models/*.onnx
 models/*.safetensors
+
+# Видеофайлы
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.wmv
+
+# Claude Code settings
+.claude/
+
+# pip binary
+pip

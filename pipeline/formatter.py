@@ -243,7 +243,10 @@ class Formatter:
         # Чистим временный trim-файл если создавался
         trimmed_path = output_path.parent / f"{output_path.stem}_trim.mp4"
         if trimmed_path.exists():
-            trimmed_path.unlink()
+            try:
+                trimmed_path.unlink()
+            except Exception as e:
+                logger.warning(f"Не удалось удалить временный файл {trimmed_path.name}: {e}")
 
         # Сжигаем субтитры если есть транскрипт
         if transcript is not None:

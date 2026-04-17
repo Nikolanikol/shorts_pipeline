@@ -16,14 +16,14 @@ from loguru import logger
 
 @dataclass
 class VideoEncoder:
-    name: str        # h264_nvenc | libx264
-    quality_flag: str  # -cq (nvenc) | -crf (libx264)
-    quality_value: str  # "23"
-    preset: str      # p4 (nvenc) | fast (libx264)
+    name: str            # h264_nvenc | libx264
+    quality_flag: str    # -cq (nvenc) | -crf (libx264)
+    quality_value: int   # 23
+    preset: str          # p4 (nvenc) | fast (libx264)
 
     def args(self, quality: int = None) -> list[str]:
         """Возвращает список ffmpeg аргументов для кодирования."""
-        q = str(quality) if quality else self.quality_value
+        q = str(quality) if quality is not None else str(self.quality_value)
         return [
             "-c:v", self.name,
             "-preset", self.preset,
@@ -38,34 +38,47 @@ def get_video_encoder() -> VideoEncoder:
     Результат кэшируется — определение происходит один раз.
     """
     try:
+        # Проверяем что h264_nvenc числится среди энкодеров
         result = subprocess.run(
             ["ffmpeg", "-encoders", "-v", "quiet"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True, text=True, timeout=10,
         )
-        if "h264_nvenc" in result.stdout:
-            # Проверяем что nvenc реально работает (не просто числится)
-            test = subprocess.run(
-                [
-                    "ffmpeg", "-f", "lavfi", "-i", "nullsrc=s=64x64:d=1",
-                    "-c:v", "h264_nvenc", "-f", "null", "-",
-                ],
-                capture_output=True, timeout=10,
-            )
-            if test.returncode == 0:
-                logger.info("Энкодер: h264_nvenc (GPU) — ускорение в 5-8x")
-                return VideoEncoder(
-                    name="h264_nvenc",
-                    quality_flag="-cq",
-                    quality_value="23",
-                    preset="p4",
-                )
-    except Exception:
-        pass
+        if "h264_nvenc" not in result.stdout:
+            logger.info("Энкодер: libx264 (CPU) — h264_nvenc не найден")
+            return _cpu_encoder()
 
+        # Проверяем что nvenc реально работает
+        test = subprocess.run(
+            [
+                "ffmpeg", "-f", "lavfi", "-i", "nullsrc=s=64x64:d=1",
+                "-c:v", "h264_nvenc", "-f", "null", "-",
+            ],
+            capture_output=True, text=True, timeout=15,
+        )
+        if test.returncode == 0:
+            logger.info("Энкодер: h264_nvenc (GPU) — ускорение в 5-8x")
+            return VideoEncoder(
+                name="h264_nvenc",
+                quality_flag="-cq",
+                quality_value=23,
+                preset="p4",
+            )
+        else:
+            logger.warning(f"NVENC тест не прошёл: {test.stderr[:200]}")
+
+    except subprocess.TimeoutExpired:
+        logger.warning("NVENC тест timeout — переключаемся на CPU")
+    except Exception as e:
+        logger.warning(f"Ошибка при тестировании NVENC: {e}")
+
+    return _cpu_encoder()
+
+
+def _cpu_encoder() -> VideoEncoder:
     logger.info("Энкодер: libx264 (CPU)")
     return VideoEncoder(
         name="libx264",
         quality_flag="-crf",
-        quality_value="23",
+        quality_value=23,
         preset="fast",
     )
