@@ -232,6 +232,24 @@ def run_pipeline(
         size_mb = out.stat().st_size / 1024 / 1024 if out.exists() else 0
         logger.info(f"   📹 {out.parent.name}/{out.name}  ({final.duration:.0f}с, {size_mb:.1f} MB)")
 
+    # ------------------------------------------------------------------
+    # Добавляем в очередь Telegram бота (если бот настроен)
+    # ------------------------------------------------------------------
+    try:
+        from bot.queue_db import init_db, add_video
+        init_db()
+        added = 0
+        for final in finals:
+            out = Path(final.output_path)
+            if out.exists():
+                caption = f"#{video_id.replace(' ', '_')} #{final.platform}"
+                add_video(str(out), caption=caption)
+                added += 1
+        if added:
+            logger.info(f"📬 Добавлено в очередь Telegram бота: {added} видео")
+    except Exception as e:
+        logger.debug(f"Telegram очередь недоступна: {e}")
+
 
 def main():
     parser = argparse.ArgumentParser(
