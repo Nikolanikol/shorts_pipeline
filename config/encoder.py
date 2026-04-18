@@ -48,9 +48,10 @@ def get_video_encoder() -> VideoEncoder:
             return _cpu_encoder()
 
         # Проверяем что nvenc реально работает
+        # Минимальный размер кадра для NVENC = 145x145
         test = subprocess.run(
             [
-                "ffmpeg", "-f", "lavfi", "-i", "nullsrc=s=64x64:d=1",
+                "ffmpeg", "-f", "lavfi", "-i", "nullsrc=s=256x256:d=1",
                 "-c:v", "h264_nvenc", "-f", "null", "-",
             ],
             capture_output=True, text=True, timeout=15,
@@ -64,7 +65,7 @@ def get_video_encoder() -> VideoEncoder:
                 preset="p4",
             )
         else:
-            logger.warning(f"NVENC тест не прошёл: {test.stderr[:200]}")
+            logger.warning(f"NVENC тест не прошёл (код {test.returncode}):\n{test.stderr[-500:]}")
 
     except subprocess.TimeoutExpired:
         logger.warning("NVENC тест timeout — переключаемся на CPU")
