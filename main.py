@@ -94,6 +94,7 @@ def run_pipeline(
     video_path: str,
     platforms: list[str] = None,
     skip_antidetect: bool = False,
+    no_subtitles: bool = False,
 ) -> None:
     """
     Запускает полный пайплайн для одного видео.
@@ -208,7 +209,7 @@ def run_pipeline(
         finals = formatter.process(
             clips=processed_clips,
             platforms=platforms,
-            transcript=transcript,
+            transcript=None if no_subtitles else transcript,
         )
         state.format_done = True
         state.final_shorts = finals
@@ -247,6 +248,10 @@ def main():
         "--skip-antidetect", action="store_true",
         help="Пропустить анти-бан обработку"
     )
+    parser.add_argument(
+        "--no-subtitles", action="store_true",
+        help="Не сжигать субтитры в видео"
+    )
     args = parser.parse_args()
 
     # Настройка логирования
@@ -269,6 +274,7 @@ def main():
         video_path=args.video,
         platforms=args.platforms,
         skip_antidetect=args.skip_antidetect,
+        no_subtitles=args.no_subtitles,
     )
 
 

@@ -219,10 +219,8 @@ class Formatter:
 
         from config.encoder import get_video_encoder
         enc = get_video_encoder()
-        hw_args = ["-hwaccel", "cuda"] if enc.name == "h264_nvenc" else []
         cmd = [
             "ffmpeg",
-            *hw_args,
             "-i", input_for_format,
             "-filter_complex", filtergraph,
             "-map", "[v]",

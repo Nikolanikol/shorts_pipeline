@@ -139,10 +139,8 @@ def burn_subtitles(
 
         from config.encoder import get_video_encoder
         enc = get_video_encoder()
-        hw_args = ["-hwaccel", "cuda"] if enc.name == "h264_nvenc" else []
         cmd = [
             "ffmpeg",
-            *hw_args,
             "-i", video_path,
             "-vf", vf,
             *enc.args(),

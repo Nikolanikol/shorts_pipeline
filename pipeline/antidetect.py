@@ -134,12 +134,8 @@ class AntiDetect:
 
         from config.encoder import get_video_encoder
         enc = get_video_encoder()
-        # -hwaccel cuda: декодирование на GPU
-        # -threads 4: не даём занять все ядра CPU фильтрами
-        hw_args = ["-hwaccel", "cuda"] if enc.name == "h264_nvenc" else []
         cmd = [
             "ffmpeg",
-            *hw_args,
             "-i", str(input_path),
             "-vf", vf,
             "-af", af,
