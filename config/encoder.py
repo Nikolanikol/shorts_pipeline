@@ -61,7 +61,7 @@ def get_video_encoder() -> VideoEncoder:
             return VideoEncoder(
                 name="h264_nvenc",
                 quality_flag="-cq",
-                quality_value=23,
+                quality_value=28,
                 preset="p4",
             )
         else:
@@ -80,6 +80,6 @@ def _cpu_encoder() -> VideoEncoder:
     return VideoEncoder(
         name="libx264",
         quality_flag="-crf",
-        quality_value=23,
+        quality_value=28,
         preset="fast",
     )
