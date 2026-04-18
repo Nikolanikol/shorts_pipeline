@@ -45,10 +45,13 @@ def _fmt_time(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
-def _build_srt(transcript: Transcript, start_offset: float, end_offset: float) -> str:
+def _build_srt(transcript: Transcript, start_offset: float, end_offset: float, speed: float = 1.0) -> str:
     """
     Генерирует SRT-строку для отрезка видео [start_offset, end_offset].
-    Тайм-коды пересчитываются относительно начала клипа.
+    Тайм-коды пересчитываются относительно начала клипа с учётом speed.
+
+    Если antidetect применил speed=1.038, видео стало короче:
+    кадр, который был на секунде T, теперь на T/speed.
     """
     lines = []
     index = 1
@@ -62,6 +65,10 @@ def _build_srt(transcript: Transcript, start_offset: float, end_offset: float) -
 
         if seg_end <= seg_start:
             continue
+
+        # Корректируем тайм-код под изменённую скорость видео
+        seg_start = seg_start / speed
+        seg_end = seg_end / speed
 
         text = _wrap_text(seg.text.strip())
 
@@ -80,6 +87,7 @@ def burn_subtitles(
     transcript: Transcript,
     start_offset: float = 0.0,
     end_offset: float = None,
+    speed: float = 1.0,
 ) -> str:
     """
     Сжигает субтитры в видео.
@@ -97,7 +105,7 @@ def burn_subtitles(
     if end_offset is None:
         end_offset = transcript.duration
 
-    srt_content = _build_srt(transcript, start_offset, end_offset)
+    srt_content = _build_srt(transcript, start_offset, end_offset, speed=speed)
 
     if not srt_content.strip():
         logger.warning(f"Нет субтитров для отрезка {start_offset:.1f}—{end_offset:.1f}с, пропускаем")

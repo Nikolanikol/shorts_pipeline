@@ -182,6 +182,7 @@ class AntiDetect:
             filters_applied=filters,
             start=clip.start,
             end=clip.end,
+            speed=speed,  # сохраняем для синхронизации субтитров
         )
 
     def process(self, clips: list[RawClip]) -> list[ProcessedClip]:

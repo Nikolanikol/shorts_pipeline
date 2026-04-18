@@ -98,6 +98,7 @@ class ProcessedClip(BaseModel):
     filters_applied: list[str] = Field(default_factory=list)
     start: float = Field(default=0.0, description="Начало клипа в исходном видео (сек)")
     end: float = Field(default=0.0, description="Конец клипа в исходном видео (сек)")
+    speed: float = Field(default=1.0, description="Коэффициент скорости antidetect (для синхронизации субтитров)")
 
 
 # ---------------------------------------------------------------------------

@@ -261,6 +261,7 @@ class Formatter:
                 transcript=transcript,
                 start_offset=clip.start,
                 end_offset=clip.end,
+                speed=clip.speed,  # передаём скорость antidetect для точных тайм-кодов
             )
             if result_path == str(sub_output) and sub_output.exists():
                 output_path.unlink()
