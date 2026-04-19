@@ -7,8 +7,10 @@
 """
 
 import argparse
+import random
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 from loguru import logger
@@ -56,10 +58,41 @@ def upload_one(video_path: str, description: str = "") -> bool:
         return False
 
 
-def upload_queue(delay_minutes: int = 30) -> None:
+SAFE_HOURS = range(9, 23)   # постим только с 9:00 до 23:00
+MAX_PER_DAY = 2             # максимум постов в день на аккаунт
+
+
+def _wait_until_safe_hour() -> None:
+    """Ждёт если сейчас ночное время (23:00 — 9:00)."""
+    now = datetime.now().hour
+    if now not in SAFE_HOURS:
+        # Считаем сколько ждать до 9:00
+        if now >= 23:
+            wait_hours = 24 - now + 9
+        else:
+            wait_hours = 9 - now
+        logger.info(f"🌙 Сейчас {now}:00 — ночное время. Жду до 9:00 ({wait_hours} ч)...")
+        time.sleep(wait_hours * 3600)
+
+
+def _random_delay(base_minutes: int) -> None:
     """
-    Загружает все pending видео из очереди Telegram бота.
-    Между постами ждёт delay_minutes минут.
+    Случайная задержка ±30% от базового значения.
+    base=30 мин → ждём от 21 до 39 мин — выглядит как человек.
+    """
+    low  = int(base_minutes * 0.7)
+    high = int(base_minutes * 1.3)
+    wait = random.randint(low, high)
+    logger.info(f"⏳ Жду {wait} мин до следующего поста...")
+    time.sleep(wait * 60)
+
+
+def upload_queue(delay_minutes: int = 30, max_per_day: int = MAX_PER_DAY) -> None:
+    """
+    Загружает pending видео из очереди с защитой от бана:
+    - Только в безопасные часы (9:00–23:00)
+    - Максимум max_per_day постов в день
+    - Случайная задержка ±30% между постами
     """
     from bot.queue_db import init_db, get_next_pending, update_status
 
@@ -67,9 +100,17 @@ def upload_queue(delay_minutes: int = 30) -> None:
     count = 0
 
     while True:
+        # Проверяем безопасное время
+        _wait_until_safe_hour()
+
+        # Лимит в день
+        if count >= max_per_day:
+            logger.info(f"🛑 Лимит {max_per_day} постов/день достигнут. Запусти завтра.")
+            break
+
         item = get_next_pending()
         if not item:
-            logger.info("Очередь пуста — всё загружено!")
+            logger.info("✅ Очередь пуста — всё загружено!")
             break
 
         success = upload_one(item.video_path, item.caption)
@@ -77,11 +118,12 @@ def upload_queue(delay_minutes: int = 30) -> None:
         if success:
             update_status(item.id, "sent")
             count += 1
-            logger.info(f"Загружено {count} видео. Жду {delay_minutes} мин до следующего...")
-            time.sleep(delay_minutes * 60)
+            logger.info(f"📊 Опубликовано сегодня: {count}/{max_per_day}")
+            if count < max_per_day:
+                _random_delay(delay_minutes)
         else:
             update_status(item.id, "failed")
-            logger.warning("Пропускаю видео с ошибкой, перехожу к следующему...")
+            logger.warning("Пропускаю видео с ошибкой...")
             time.sleep(60)
 
     logger.info(f"Готово! Загружено: {count} видео")
