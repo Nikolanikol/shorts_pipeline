@@ -108,13 +108,12 @@ def main():
 
     # Публикуем всё накопленное в TikTok
     if args.publish:
-        logger.info("🚀 Запускаю публикацию в TikTok...")
-        from publish.tiktok_upload import upload_queue
-        upload_queue(delay_minutes=30)
+        logger.info("🚀 Запускаю планировщик публикации (2 поста/день)...")
+        from publish.tiktok_upload import upload_scheduler
+        upload_scheduler(delay_minutes=30, max_per_day=2)
     else:
         logger.info("💡 Для публикации запусти:")
         logger.info("   run_all.bat --publish")
-        logger.info("   или: python -m publish.tiktok_upload --queue")
 
 
 if __name__ == "__main__":

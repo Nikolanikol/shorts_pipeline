@@ -129,19 +129,79 @@ def upload_queue(delay_minutes: int = 30, max_per_day: int = MAX_PER_DAY) -> Non
     logger.info(f"Готово! Загружено: {count} видео")
 
 
+def upload_scheduler(delay_minutes: int = 30, max_per_day: int = MAX_PER_DAY) -> None:
+    """
+    Запускается один раз — постит по max_per_day видео в день
+    пока очередь не опустеет. Между днями ждёт до 9:00.
+    """
+    from bot.queue_db import init_db, get_next_pending, update_status, get_stats
+
+    init_db()
+    total_posted = 0
+
+    logger.info("🤖 Планировщик запущен. Работает пока очередь не опустеет.")
+    logger.info(f"   Режим: {max_per_day} поста/день, пауза ~{delay_minutes} мин")
+
+    while True:
+        stats = get_stats()
+        if stats["pending"] == 0:
+            logger.info(f"🏁 Очередь пуста! Всего опубликовано: {total_posted}")
+            _notify(f"🏁 Публикация завершена! Всего опубликовано: {total_posted} видео")
+            break
+
+        logger.info(f"📅 Новый день. В очереди: {stats['pending']} видео")
+        posted_today = 0
+
+        # Постим до лимита в день
+        while posted_today < max_per_day:
+            _wait_until_safe_hour()
+
+            item = get_next_pending()
+            if not item:
+                break
+
+            success = upload_one(item.video_path, item.caption)
+
+            if success:
+                update_status(item.id, "sent")
+                posted_today += 1
+                total_posted += 1
+                logger.info(f"📊 Сегодня: {posted_today}/{max_per_day} | Всего: {total_posted}")
+                _notify(f"✅ Опубликовано {total_posted} видео\n{Path(item.video_path).name}")
+
+                if posted_today < max_per_day:
+                    _random_delay(delay_minutes)
+            else:
+                update_status(item.id, "failed")
+                logger.warning("Ошибка — пропускаю...")
+                time.sleep(60)
+
+        # Ждём следующий день (до 9:00 следующего дня)
+        if get_stats()["pending"] > 0:
+            now = datetime.now()
+            wait_hours = 24 - now.hour + 9
+            logger.info(f"💤 Лимит дня выполнен ({posted_today} постов). Следующий пост через ~{wait_hours} ч")
+            _notify(f"💤 Лимит дня: {posted_today} постов. Продолжу завтра в 9:00")
+            time.sleep(wait_hours * 3600)
+
+
 def main():
     parser = argparse.ArgumentParser(description="TikTok автозагрузка")
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--video",  help="Путь к видео файлу")
-    group.add_argument("--queue",  action="store_true", help="Загрузить всё из очереди бота")
+    group.add_argument("--video",     help="Путь к видео файлу")
+    group.add_argument("--queue",     action="store_true", help="Загрузить сегодняшний лимит из очереди")
+    group.add_argument("--scheduler", action="store_true", help="Запустить планировщик (постит каждый день)")
     parser.add_argument("--description", default="", help="Описание видео")
     parser.add_argument("--delay", type=int, default=30, help="Минут между постами (default: 30)")
+    parser.add_argument("--max-per-day", type=int, default=MAX_PER_DAY, help="Постов в день (default: 2)")
     args = parser.parse_args()
 
     if args.video:
         upload_one(args.video, args.description)
     elif args.queue:
-        upload_queue(delay_minutes=args.delay)
+        upload_queue(delay_minutes=args.delay, max_per_day=args.max_per_day)
+    elif args.scheduler:
+        upload_scheduler(delay_minutes=args.delay, max_per_day=args.max_per_day)
 
 
 if __name__ == "__main__":
