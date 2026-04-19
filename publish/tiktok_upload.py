@@ -66,35 +66,17 @@ def upload_one(video_path: str, description: str = "", retries: int = 2) -> bool
         )
         return False
 
-    import os
-    account = os.getenv("TIKTOK_USERNAME", "")
-    name    = Path(video_path).name
+    from tiktok_uploader.upload import upload_video
+    name = Path(video_path).name
 
     for attempt in range(1, retries + 1):
         logger.info(f"Загружаю: {name} (попытка {attempt}/{retries})")
         try:
-            # Пробуем TikTokAutoUploader (stealth режим, лучше обходит детекцию)
-            if account:
-                from tiktokautouploader import upload_tiktok
-                upload_tiktok(
-                    video=video_path,
-                    description=description,
-                    accountname=account,
-                    hashtags=None,
-                    stealth=True,
-                    headless=False,    # headless=True если не хочешь видеть браузер
-                    copyrightcheck=False,
-                    suppressprint=False,
-                )
-            else:
-                # Fallback: tiktok-uploader через cookies
-                from tiktok_uploader.upload import upload_video
-                upload_video(
-                    video_path,
-                    description=description,
-                    cookies=str(COOKIES_PATH),
-                )
-
+            upload_video(
+                video_path,
+                description=description,
+                cookies=str(COOKIES_PATH),
+            )
             logger.info(f"✅ Опубликовано: {name}")
             return True
 
