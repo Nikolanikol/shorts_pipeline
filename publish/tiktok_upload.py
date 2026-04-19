@@ -7,21 +7,44 @@
 """
 
 import argparse
+import json
 import random
 import sys
 import time
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
+from dotenv import load_dotenv
 from loguru import logger
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 COOKIES_PATH = Path(__file__).parent.parent / "cookies.txt"
 
 
-def upload_one(video_path: str, description: str = "") -> bool:
+def _notify(text: str) -> None:
+    """Отправляет уведомление в Telegram через urllib (без asyncio)."""
+    try:
+        import os
+        token    = os.getenv("TELEGRAM_TOKEN")
+        owner_id = os.getenv("TELEGRAM_OWNER_ID")
+        if not token or not owner_id:
+            return
+        data = json.dumps({"chat_id": int(owner_id), "text": text}).encode()
+        req  = urllib.request.Request(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            data=data,
+            headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(req, timeout=10)
+    except Exception:
+        pass
+
+
+def upload_one(video_path: str, description: str = "", retries: int = 2) -> bool:
     """
     Загружает одно видео в TikTok.
     Возвращает True если успешно.
@@ -43,19 +66,31 @@ def upload_one(video_path: str, description: str = "") -> bool:
         )
         return False
 
-    logger.info(f"Загружаю: {Path(video_path).name}")
-    try:
-        upload_video(
-            video_path,
-            description=description,
-            cookies=str(COOKIES_PATH),
-        )
-        logger.info(f"✅ Опубликовано: {Path(video_path).name}")
-        return True
+    name = Path(video_path).name
+    for attempt in range(1, retries + 1):
+        logger.info(f"Загружаю: {name} (попытка {attempt}/{retries})")
+        try:
+            results = upload_video(
+                video_path,
+                description=description,
+                cookies=str(COOKIES_PATH),
+            )
+            # upload_video возвращает список результатов
+            # проверяем что нет ошибок
+            if results and hasattr(results[0], 'ok') and not results[0].ok:
+                raise RuntimeError(f"upload_video вернул ошибку: {results[0]}")
 
-    except Exception as e:
-        logger.error(f"❌ Ошибка загрузки: {e}")
-        return False
+            logger.info(f"✅ Опубликовано: {name}")
+            return True
+
+        except Exception as e:
+            logger.error(f"❌ Ошибка (попытка {attempt}): {e}")
+            if attempt < retries:
+                wait = 30 * attempt
+                logger.info(f"Жду {wait} сек перед повтором...")
+                time.sleep(wait)
+
+    return False
 
 
 SAFE_HOURS = range(9, 23)   # постим только с 9:00 до 23:00
