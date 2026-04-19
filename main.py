@@ -91,19 +91,22 @@ def load_transcript(video_id: str) -> Transcript | None:
 
 
 def _notify(text: str) -> None:
-    """Отправляет уведомление в Telegram (тихо падает если бот не настроен)."""
+    """Отправляет уведомление в Telegram через urllib (без asyncio)."""
     try:
-        import asyncio, os
+        import json, os, urllib.request
         from dotenv import load_dotenv
         load_dotenv()
         token    = os.getenv("TELEGRAM_TOKEN")
         owner_id = os.getenv("TELEGRAM_OWNER_ID")
         if not token or not owner_id:
             return
-        from telegram import Bot
-        async def _send():
-            await Bot(token).send_message(chat_id=int(owner_id), text=text)
-        asyncio.run(_send())
+        data = json.dumps({"chat_id": int(owner_id), "text": text}).encode()
+        req  = urllib.request.Request(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            data=data,
+            headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(req, timeout=10)
     except Exception:
         pass
 
