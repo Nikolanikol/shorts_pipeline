@@ -90,11 +90,30 @@ def load_transcript(video_id: str) -> Transcript | None:
     return None
 
 
+def _notify(text: str) -> None:
+    """Отправляет уведомление в Telegram (тихо падает если бот не настроен)."""
+    try:
+        import asyncio, os
+        from dotenv import load_dotenv
+        load_dotenv()
+        token    = os.getenv("TELEGRAM_TOKEN")
+        owner_id = os.getenv("TELEGRAM_OWNER_ID")
+        if not token or not owner_id:
+            return
+        from telegram import Bot
+        async def _send():
+            await Bot(token).send_message(chat_id=int(owner_id), text=text)
+        asyncio.run(_send())
+    except Exception:
+        pass
+
+
 def run_pipeline(
     video_path: str,
     platforms: list[str] = None,
     skip_antidetect: bool = False,
     no_subtitles: bool = False,
+    auto_publish: bool = False,
 ) -> None:
     """
     Запускает полный пайплайн для одного видео.
@@ -123,6 +142,7 @@ def run_pipeline(
     logger.info(f"   Файл:      {video_path.name}")
     logger.info(f"   ID:        {video_id}")
     logger.info(f"   Платформы: {', '.join(platforms)}")
+    _notify(f"▶ Начал обработку: {video_path.name}")
     logger.info(f"")
 
     # ------------------------------------------------------------------
@@ -233,7 +253,7 @@ def run_pipeline(
         logger.info(f"   📹 {out.parent.name}/{out.name}  ({final.duration:.0f}с, {size_mb:.1f} MB)")
 
     # ------------------------------------------------------------------
-    # Добавляем в очередь Telegram бота (если бот настроен)
+    # Добавляем в очередь и уведомляем
     # ------------------------------------------------------------------
     try:
         from bot.queue_db import init_db, add_video
@@ -246,9 +266,18 @@ def run_pipeline(
                 add_video(str(out), caption=caption)
                 added += 1
         if added:
-            logger.info(f"📬 Добавлено в очередь Telegram бота: {added} видео")
+            logger.info(f"📬 Добавлено в очередь: {added} видео")
+            _notify(f"✅ Готово! {added} видео в очереди на публикацию.\n{video_path.name}")
     except Exception as e:
-        logger.debug(f"Telegram очередь недоступна: {e}")
+        logger.debug(f"Очередь недоступна: {e}")
+
+    # Авто-публикация в TikTok
+    # ------------------------------------------------------------------
+    if auto_publish:
+        logger.info("🚀 Авто-публикация в TikTok...")
+        _notify("🚀 Начинаю публикацию в TikTok...")
+        from publish.tiktok_upload import upload_queue
+        upload_queue(delay_minutes=30)
 
 
 def main():
@@ -269,6 +298,10 @@ def main():
     parser.add_argument(
         "--no-subtitles", action="store_true",
         help="Не сжигать субтитры в видео"
+    )
+    parser.add_argument(
+        "--publish", action="store_true",
+        help="Автоматически опубликовать в TikTok после обработки"
     )
     args = parser.parse_args()
 
@@ -293,6 +326,7 @@ def main():
         platforms=args.platforms,
         skip_antidetect=args.skip_antidetect,
         no_subtitles=args.no_subtitles,
+        auto_publish=args.publish,
     )
 
 
