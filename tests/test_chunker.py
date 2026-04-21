@@ -14,7 +14,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 from models.schemas import Transcript, TranscriptSegment, RawClip
-from pipeline.chunker import Chunker, ChunkBoundary
+from processor.chunker import Chunker, ChunkBoundary
 
 
 # ---------------------------------------------------------------------------

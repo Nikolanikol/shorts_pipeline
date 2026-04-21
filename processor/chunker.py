@@ -148,8 +148,11 @@ class Chunker:
         enc = get_video_encoder()
         cmd = [
             "ffmpeg",
-            "-ss", str(start),
+            # ВАЖНО: -ss ПОСЛЕ -i = точный seek (медленнее, но без сдвига keyframe).
+            # -ss до -i ищет ближайший keyframe и даёт смещение тайм-кодов ~0.5-2с,
+            # из-за чего субтитры появляются раньше речи.
             "-i", str(video_path),
+            "-ss", str(start),
             "-t", str(duration),
             *enc.args(quality=18),
             "-c:a", "aac",
@@ -200,7 +203,8 @@ class Chunker:
         logger.info(f"Нарезаем {len(chunks)} чанков из {duration / 60:.1f} мин видео")
 
         clips = []
-        clips_dir = settings.output_dir / video_id
+        # Промежуточные файлы (сырые чанки) — в temp/, не в ready/pending/
+        clips_dir = settings.temp_dir / video_id
         clips_dir.mkdir(parents=True, exist_ok=True)
 
         for i, (start, end) in enumerate(chunks):

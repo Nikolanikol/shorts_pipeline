@@ -23,7 +23,7 @@ from telegram.ext import (
 
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from bot.queue_db import get_recent, get_stats, init_db
+from publisher.queue_db import get_recent, get_stats, init_db
 
 # ---------------------------------------------------------------------------
 load_dotenv(Path(__file__).parent.parent / ".env")

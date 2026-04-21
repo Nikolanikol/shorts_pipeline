@@ -158,8 +158,12 @@ class Settings(BaseSettings):
     # Пути
     # ---------------------------------------------------------------------------
     output_dir: Path = Field(
-        default=BASE_DIR / "output",
-        description="Папка для готовых шортсов"
+        default=BASE_DIR / "ready" / "pending",
+        description="Папка для готовых шортсов (ожидают публикации)"
+    )
+    posted_dir: Path = Field(
+        default=BASE_DIR / "ready" / "posted",
+        description="Папка для опубликованных шортсов"
     )
     checkpoint_dir: Path = Field(
         default=BASE_DIR / "checkpoints",
@@ -172,7 +176,7 @@ class Settings(BaseSettings):
 
     def ensure_dirs(self) -> None:
         """Создаёт все необходимые директории если их нет."""
-        for d in [self.output_dir, self.checkpoint_dir, self.temp_dir]:
+        for d in [self.output_dir, self.posted_dir, self.checkpoint_dir, self.temp_dir]:
             d.mkdir(parents=True, exist_ok=True)
 
 

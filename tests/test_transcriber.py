@@ -17,7 +17,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch, call
 
 from models.schemas import Transcript, TranscriptSegment
-from pipeline.transcriber import Transcriber
+from processor.transcriber import Transcriber
 
 
 # ---------------------------------------------------------------------------

@@ -109,3 +109,40 @@ def get_recent(limit: int = 10) -> list[QueueItem]:
             "SELECT * FROM queue ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
         return [QueueItem(**dict(r)) for r in rows]
+
+
+def reset_failed() -> tuple[int, int]:
+    """
+    Сбрасывает failed видео обратно в pending — только если файл существует.
+    Записи с несуществующими файлами помечаются как skipped (дубли/перемещённые).
+
+    Вызывается командой 'run.bat retry' после устранения проблемы.
+
+    Returns:
+        (reset_count, skipped_count)
+    """
+    with get_db() as db:
+        rows = db.execute(
+            "SELECT id, video_path FROM queue WHERE status='failed'"
+        ).fetchall()
+
+    reset_count   = 0
+    skipped_count = 0
+
+    with get_db() as db:
+        for row in rows:
+            if Path(row["video_path"]).exists():
+                db.execute(
+                    "UPDATE queue SET status='pending', sent_at=NULL WHERE id=?",
+                    (row["id"],)
+                )
+                reset_count += 1
+            else:
+                # Файл не найден — видимо уже опубликован другим батчем
+                db.execute(
+                    "UPDATE queue SET status='skipped' WHERE id=?",
+                    (row["id"],)
+                )
+                skipped_count += 1
+
+    return reset_count, skipped_count

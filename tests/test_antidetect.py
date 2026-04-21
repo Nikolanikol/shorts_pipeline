@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 from models.schemas import RawClip, ProcessedClip
-from pipeline.antidetect import AntiDetect
+from processor.antidetect import AntiDetect
 
 
 # ---------------------------------------------------------------------------

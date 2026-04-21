@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 from models.schemas import ProcessedClip, FinalShort
-from pipeline.formatter import Formatter, PLATFORMS
+from processor.formatter import Formatter, PLATFORMS
 
 
 # ---------------------------------------------------------------------------

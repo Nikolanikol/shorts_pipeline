@@ -72,11 +72,59 @@ class Formatter:
             logger.warning(f"Не удалось получить инфо о видео: {clip_path}")
             return 1280, 720, 120.0
 
+    def _detect_crop(self, clip_path: str, probe_seconds: int = 10) -> tuple[int, int, int, int] | None:
+        """
+        Определяет реальные границы контента — обнаруживает и убирает чёрные полосы.
+
+        Запускает ffmpeg cropdetect на первые probe_seconds секунд видео.
+        Возвращает (w, h, x, y) для crop фильтра, или None если полос нет.
+
+        Чёрные полосы у старых аниме (4:3 в 16:9 контейнере) — типичный случай.
+        """
+        cmd = [
+            "ffmpeg",
+            "-ss", "5",                          # пропускаем первые 5 сек (часто чёрный экран)
+            "-i", clip_path,
+            "-t", str(probe_seconds),
+            "-vf", "cropdetect=24:16:0",         # порог=24, округление=16
+            "-f", "null", "-",
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        # cropdetect пишет результаты в stderr
+        crop_values = None
+        for line in result.stderr.splitlines():
+            if "crop=" in line:
+                # Пример: crop=1280:720:0:0  или  crop=720:540:280:90
+                try:
+                    crop_part = line.split("crop=")[-1].strip().split()[0]
+                    w, h, x, y = map(int, crop_part.split(":"))
+                    crop_values = (w, h, x, y)   # берём последнее (самое точное)
+                except Exception:
+                    continue
+
+        if crop_values is None:
+            return None
+
+        w, h, x, y = crop_values
+
+        # Получаем оригинальный размер чтобы сравнить
+        orig_w, orig_h, _ = self._get_video_info(clip_path)
+
+        # Если crop убирает меньше 2% — полос нет, не трогаем
+        if w >= orig_w * 0.98 and h >= orig_h * 0.98:
+            logger.debug(f"Чёрных полос не обнаружено: crop={w}x{h}")
+            return None
+
+        logger.info(f"  Обнаружены чёрные полосы: {orig_w}x{orig_h} → crop {w}x{h}+{x}+{y}")
+        return crop_values
+
     def _build_vertical_filter(
         self,
         src_w: int, src_h: int,
         target_w: int, target_h: int,
         fps: int,
+        crop: tuple[int, int, int, int] | None = None,
     ) -> str:
         """
         Строит ffmpeg filtergraph для конвертации в вертикальный формат.
@@ -90,6 +138,13 @@ class Formatter:
 
         Результат: красивое вертикальное видео без чёрных полос.
         """
+        # Если нашли чёрные полосы — заменяем src_w/src_h на реальный контент
+        crop_prefix = ""
+        if crop:
+            cw, ch, cx, cy = crop
+            crop_prefix = f"crop={cw}:{ch}:{cx}:{cy},"
+            src_w, src_h = cw, ch
+
         src_ratio = src_w / src_h
         target_ratio = target_w / target_h
 
@@ -109,9 +164,10 @@ class Formatter:
             main_y = (target_h - main_h) // 2  # центрируем по вертикали
 
             filtergraph = (
-                f"[0:v]scale={bg_w}:{bg_h},crop={target_w}:{target_h}:{bg_x}:0,"
+                f"[0:v]{crop_prefix}split[src1][src2];"
+                f"[src1]scale={bg_w}:{bg_h},crop={target_w}:{target_h}:{bg_x}:0,"
                 f"boxblur=20:5[bg];"
-                f"[0:v]scale={main_w}:{main_h}[main];"
+                f"[src2]scale={main_w}:{main_h}[main];"
                 f"[bg][main]overlay=(W-w)/2:{main_y},"
                 f"fps={fps}[v]"
             )
@@ -128,10 +184,11 @@ class Formatter:
             main_x = (target_w - main_w) // 2
 
             filtergraph = (
-                f"[0:v]scale={bg_w}:{bg_h},"
+                f"[0:v]{crop_prefix}split[src1][src2];"
+                f"[src1]scale={bg_w}:{bg_h},"
                 f"pad={target_w}:{target_h}:0:{bg_y}:black,"
                 f"boxblur=20:5[bg];"
-                f"[0:v]scale={main_w}:{main_h}[main];"
+                f"[src2]scale={main_w}:{main_h}[main];"
                 f"[bg][main]overlay={main_x}:(H-h)/2,"
                 f"fps={fps}[v]"
             )
@@ -210,11 +267,15 @@ class Formatter:
         )
         actual_duration = min(duration, platform.max_duration)
 
+        # Ищем чёрные полосы (4:3 контент в 16:9 контейнере и т.п.)
+        crop = self._detect_crop(input_for_format)
+
         # Строим фильтр вертикализации
         filtergraph = self._build_vertical_filter(
             src_w, src_h,
             platform.width, platform.height,
             platform.fps,
+            crop=crop,
         )
 
         from config.encoder import get_video_encoder
@@ -251,7 +312,7 @@ class Formatter:
 
         # Сжигаем субтитры если есть транскрипт
         if transcript is not None:
-            from pipeline.subtitles import burn_subtitles
+            from processor.subtitles import burn_subtitles
             sub_output = out_dir / f"{stem}_{platform_name}_sub.mp4"
             result_path = burn_subtitles(
                 video_path=str(output_path),
@@ -259,7 +320,9 @@ class Formatter:
                 transcript=transcript,
                 start_offset=clip.start,
                 end_offset=clip.end,
-                speed=clip.speed,  # передаём скорость antidetect для точных тайм-кодов
+                speed=clip.speed,      # точные тайм-коды после antidetect
+                target_w=platform.width,
+                target_h=platform.height,
             )
             if result_path == str(sub_output) and sub_output.exists():
                 output_path.unlink()

@@ -156,7 +156,7 @@ class AntiDetect:
             raise RuntimeError(f"Выходной файл пустой: {output_path}")
 
         # Замена оригинального звука на фоновую музыку (если папка music/ не пуста)
-        from pipeline.audio_replace import replace_audio
+        from processor.audio_replace import replace_audio
         from config.settings import settings
         if settings.music_dir.exists() and any(settings.music_dir.iterdir()):
             music_output = output_path.parent / f"{output_path.stem}_music{output_path.suffix}"
