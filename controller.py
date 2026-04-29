@@ -2,15 +2,18 @@
 controller.py — главная точка входа пайплайна.
 
 Использование:
-    python controller.py process video.mp4
-    python controller.py process --inbox
-    python controller.py publish
-    python controller.py start              (process --inbox + publish)
+    python controller.py download https://youtube.com/watch?v=...          # скачать с YouTube
+    python controller.py download https://... --process                    # скачать + обработать
+    python controller.py process video.mp4                                 # обработать файл
+    python controller.py process --inbox                                   # обработать папку inbox/
+    python controller.py publish                                           # опубликовать в TikTok
+    python controller.py start                                             # inbox/ + публикация
     python controller.py status
     python controller.py logs [--n 20]
 
 Флаги:
     --platforms youtube_shorts tiktok reels
+    --selector auto|groq|none   (auto=Groq если есть ключ, none=нарезка по тишине)
     --skip-antidetect
     --no-subtitles
     --delay 30          (минут между постами, default 30)
@@ -22,15 +25,21 @@ import os as _os
 import sys as _sys
 from pathlib import Path as _Path
 
-for _pkg in ("nvidia/cublas/bin", "nvidia/cudnn/bin", "nvidia/cuda_runtime/bin"):
-    for _sp in _sys.path:
-        if "site-packages" in _sp:
+_nvidia_dirs = []
+for _sp in _sys.path:
+    if "site-packages" in _sp:
+        for _pkg in ("nvidia/cublas/bin", "nvidia/cudnn/bin", "nvidia/cuda_runtime/bin"):
             _dll = _Path(_sp) / _pkg
             if _dll.is_dir():
+                _nvidia_dirs.append(str(_dll))
                 try:
                     _os.add_dll_directory(str(_dll))
                 except Exception:
                     pass
+
+# Добавляем в PATH — ctranslate2 ищет DLL через PATH, не через add_dll_directory
+if _nvidia_dirs:
+    _os.environ["PATH"] = _os.pathsep.join(_nvidia_dirs) + _os.pathsep + _os.environ.get("PATH", "")
 
 import argparse
 import json
@@ -126,14 +135,21 @@ def process_video(
     platforms: list[str] = None,
     skip_antidetect: bool = False,
     no_subtitles: bool = False,
+    selector: str = "auto",
 ) -> int:
     """
     Запускает полный пайплайн для одного видео.
     Возвращает количество добавленных в очередь шортсов.
+
+    Args:
+        selector: "auto" — Groq если ключ есть, иначе Chunker;
+                  "groq"  — только Groq (ошибка если нет ключа);
+                  "none"  — всегда Chunker (нарезка по тишине)
     """
-    from models.schemas import PipelineState, Transcript, RawClip, ProcessedClip
+    from models.schemas import PipelineState, Transcript, RawClip, ProcessedClip, SceneSelection
     from processor.transcriber import Transcriber
     from processor.chunker import Chunker
+    from processor.scene_selector import SceneSelector
     from processor.antidetect import AntiDetect
     from processor.formatter import Formatter
     from processor.captions import make_caption
@@ -160,11 +176,18 @@ def process_video(
     def save_state():
         checkpoint_path.write_text(state.model_dump_json(indent=2))
 
+    # Определяем эффективный режим нарезки
+    effective_selector = selector
+    if selector == "auto":
+        from config.settings import settings as _s
+        effective_selector = "groq" if _s.groq_api_key else "none"
+
     logger.info("")
     logger.info("▶  Shorts Pipeline")
     logger.info(f"   Файл:      {video_path.name}")
     logger.info(f"   ID:        {video_id}")
     logger.info(f"   Платформы: {', '.join(platforms)}")
+    logger.info(f"   Нарезка:   {effective_selector}")
     _notify(f"▶ Начал обработку: {video_path.name}")
     logger.info("")
 
@@ -186,28 +209,56 @@ def process_video(
         logger.info(f"   ✓ {len(transcript.segments)} сегментов, {transcript.duration / 60:.1f} мин")
 
     # ------------------------------------------------------------------
-    # Шаг 2: Нарезка на чанки
+    # Шаг 2: Выбор сцен через LLM (если включён)
+    # ------------------------------------------------------------------
+    scenes_checkpoint = settings.checkpoint_dir / f"{video_id}_scenes.json"
+    scene_selection = None
+
+    if effective_selector != "none":
+        if state.scenes_done and scenes_checkpoint.exists():
+            scene_selection = SceneSelection.model_validate_json(scenes_checkpoint.read_text())
+            logger.info(f"✅ Шаг 2: Выбор сцен (из checkpoint, {len(scene_selection.scenes)} сцен)")
+        else:
+            logger.info(f"🎯 Шаг 2: Выбор интересных моментов ({effective_selector})...")
+            scene_selection = SceneSelector().process(transcript)
+            if scene_selection:
+                scenes_checkpoint.write_text(scene_selection.model_dump_json(indent=2))
+                state.scenes_done = True
+                save_state()
+                logger.info(f"   ✓ {len(scene_selection.scenes)} сцен выбрано")
+            else:
+                logger.warning("   ⚠ SceneSelector вернул None — переключаемся на нарезку по тишине")
+    else:
+        logger.info("⏭️  Шаг 2: Выбор сцен пропущен (selector=none)")
+
+    # ------------------------------------------------------------------
+    # Шаг 3: Нарезка на клипы
     # ------------------------------------------------------------------
     clips_checkpoint = settings.checkpoint_dir / f"{video_id}_clips.json"
 
     if state.cuts_done and clips_checkpoint.exists():
         raw_clips = [RawClip(**c) for c in json.loads(clips_checkpoint.read_text())]
-        logger.info(f"✅ Шаг 2: Нарезка (из checkpoint, {len(raw_clips)} чанков)")
+        logger.info(f"✅ Шаг 3: Нарезка (из checkpoint, {len(raw_clips)} клипов)")
     else:
-        logger.info("✂️  Шаг 2: Нарезка по тишине...")
-        raw_clips = Chunker().process(transcript)
+        chunker = Chunker()
+        if scene_selection and scene_selection.scenes:
+            logger.info(f"✂️  Шаг 3: Нарезка по сценам ({len(scene_selection.scenes)} моментов)...")
+            raw_clips = chunker.process_scenes(transcript, scene_selection)
+        else:
+            logger.info("✂️  Шаг 3: Нарезка по тишине...")
+            raw_clips = chunker.process(transcript)
         clips_checkpoint.write_text(json.dumps([c.model_dump() for c in raw_clips], indent=2))
         state.cuts_done = True
         save_state()
-        logger.info(f"   ✓ {len(raw_clips)} чанков")
+        logger.info(f"   ✓ {len(raw_clips)} клипов")
 
     # ------------------------------------------------------------------
-    # Шаг 3: Анти-бан
+    # Шаг 4: Анти-бан
     # ------------------------------------------------------------------
     antidetect_checkpoint = settings.checkpoint_dir / f"{video_id}_antidetect.json"
 
     if skip_antidetect:
-        logger.info("⏭️  Шаг 3: Анти-бан пропущен")
+        logger.info("⏭️  Шаг 4: Анти-бан пропущен")
         processed_clips = [
             ProcessedClip(
                 video_id=c.video_id,
@@ -222,9 +273,9 @@ def process_video(
         ]
     elif state.antidetect_done and antidetect_checkpoint.exists():
         processed_clips = [ProcessedClip(**c) for c in json.loads(antidetect_checkpoint.read_text())]
-        logger.info(f"✅ Шаг 3: Анти-бан (из checkpoint, {len(processed_clips)} клипов)")
+        logger.info(f"✅ Шаг 4: Анти-бан (из checkpoint, {len(processed_clips)} клипов)")
     else:
-        logger.info("🛡️  Шаг 3: Анти-бан обработка...")
+        logger.info("🛡️  Шаг 4: Анти-бан обработка...")
         processed_clips = AntiDetect().process(raw_clips)
         antidetect_checkpoint.write_text(json.dumps([c.model_dump() for c in processed_clips], indent=2))
         state.antidetect_done = True
@@ -232,13 +283,13 @@ def process_video(
         logger.info(f"   ✓ {len(processed_clips)} клипов обработано")
 
     # ------------------------------------------------------------------
-    # Шаг 4: Форматирование
+    # Шаг 5: Форматирование
     # ------------------------------------------------------------------
     if state.format_done:
         finals = state.final_shorts
-        logger.info(f"✅ Шаг 4: Форматирование (из checkpoint, {len(finals)} шортсов)")
+        logger.info(f"✅ Шаг 5: Форматирование (из checkpoint, {len(finals)} шортсов)")
     else:
-        logger.info(f"📱 Шаг 4: Форматирование → {', '.join(platforms)}...")
+        logger.info(f"📱 Шаг 5: Форматирование → {', '.join(platforms)}...")
         finals = Formatter().process(
             clips=processed_clips,
             platforms=platforms,
@@ -248,6 +299,7 @@ def process_video(
         state.final_shorts = finals
         save_state()
         logger.info(f"   ✓ {len(finals)} шортсов готово")
+
 
     # ------------------------------------------------------------------
     # Итог
@@ -280,6 +332,40 @@ def process_video(
         _notify(f"✅ Готово! {added} видео в очереди.\n{video_path.name}")
 
     return added
+
+
+def cmd_download(args) -> None:
+    """Скачивает видео с YouTube в папку inbox/."""
+    _setup_logging()
+    from downloader.youtube import download, get_info
+
+    url = args.url
+
+    # Показываем инфо о видео перед скачиванием
+    logger.info(f"Получаю инфо о видео...")
+    info = get_info(url)
+    if info:
+        duration_min = info.get("duration", 0) / 60
+        logger.info(f"   Название:  {info.get('title', '?')}")
+        logger.info(f"   Канал:     {info.get('uploader', '?')}")
+        logger.info(f"   Длина:     {duration_min:.1f} мин")
+
+    try:
+        video_path = download(url, output_dir=INBOX_DIR)
+    except Exception as e:
+        logger.error(f"Ошибка скачивания: {e}")
+        return
+
+    if args.process:
+        logger.info(f"")
+        logger.info(f"▶ Запускаю обработку скачанного видео...")
+        process_video(
+            video_path=video_path,
+            platforms=args.platforms,
+            skip_antidetect=args.skip_antidetect,
+            no_subtitles=args.no_subtitles,
+            selector=args.selector,
+        )
 
 
 def cmd_process(args) -> None:
@@ -315,6 +401,7 @@ def cmd_process(args) -> None:
                     platforms=args.platforms,
                     skip_antidetect=args.skip_antidetect,
                     no_subtitles=args.no_subtitles,
+                    selector=getattr(args, "selector", "auto"),
                 )
                 shutil.move(str(video), DONE_DIR / video.name)
                 logger.info(f"✓ Перемещено в inbox/done/: {video.name}")
@@ -335,6 +422,7 @@ def cmd_process(args) -> None:
             platforms=args.platforms,
             skip_antidetect=args.skip_antidetect,
             no_subtitles=args.no_subtitles,
+            selector=getattr(args, "selector", "auto"),
         )
 
 
@@ -485,7 +573,7 @@ def main():
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    # --- Общие флаги для process / start ---
+    # --- Общие флаги для process / start / download --process ---
     def add_process_args(p):
         p.add_argument(
             "--platforms", nargs="+",
@@ -495,6 +583,12 @@ def main():
         )
         p.add_argument("--skip-antidetect", action="store_true")
         p.add_argument("--no-subtitles", action="store_true")
+        p.add_argument(
+            "--selector",
+            default="auto",
+            choices=["auto", "groq", "none"],
+            help="Режим нарезки: auto=Groq если есть ключ, groq=только Groq, none=по тишине (default: auto)",
+        )
 
     def add_publish_args(p):
         p.add_argument("--delay", type=int, default=30,
@@ -503,6 +597,13 @@ def main():
                        help="Постов в день (default: 2)")
         p.add_argument("--force", action="store_true",
                        help="Не ждать безопасного времени (для тестов)")
+
+    # download
+    p_download = sub.add_parser("download", help="Скачать видео с YouTube в inbox/")
+    p_download.add_argument("url", help="Ссылка на YouTube видео")
+    p_download.add_argument("--process", action="store_true",
+                             help="После скачивания сразу обработать")
+    add_process_args(p_download)
 
     # process
     p_process = sub.add_parser("process", help="Обработать видео")
@@ -538,6 +639,7 @@ def main():
         parser.error("process требует либо --inbox, либо путь к видео")
 
     dispatch = {
+        "download": cmd_download,
         "process": cmd_process,
         "publish": cmd_publish,
         "start":   cmd_start,

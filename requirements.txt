@@ -1,8 +1,14 @@
 # Транскрибация
 faster-whisper
 
-# Claude API
+# Claude API (опционально)
 anthropic>=0.40.0
+
+# Groq API (бесплатный LLM для выбора сцен)
+groq>=0.9.0
+
+# Загрузка видео с YouTube
+yt-dlp>=2024.1.0
 
 # Валидация данных
 pydantic>=2.0

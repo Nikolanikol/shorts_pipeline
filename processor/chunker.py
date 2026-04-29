@@ -20,7 +20,7 @@ from pathlib import Path
 from loguru import logger
 
 from config.settings import settings
-from models.schemas import Transcript, TranscriptSegment, RawClip
+from models.schemas import Transcript, TranscriptSegment, RawClip, SceneSelection
 
 
 @dataclass
@@ -229,4 +229,55 @@ class Chunker:
             ))
 
         logger.info(f"Нарезка завершена: {len(clips)} чанков в {clips_dir}")
+        return clips
+
+    def process_scenes(self, transcript: Transcript, selection: SceneSelection) -> list[RawClip]:
+        """
+        Нарезает видео по конкретным сценам из SceneSelection (умный режим).
+
+        Используется когда SceneSelector нашёл интересные моменты.
+        В отличие от process() не режет последовательно — только выбранные сцены.
+
+        Args:
+            transcript: транскрипт (нужен для пути к видео и video_id)
+            selection: результат SceneSelector с таймкодами сцен
+
+        Returns:
+            Список RawClip по одному на каждую сцену
+        """
+        settings.ensure_dirs()
+
+        video_path = transcript.video_path
+        video_id = transcript.video_id
+        clips_dir = settings.temp_dir / video_id
+        clips_dir.mkdir(parents=True, exist_ok=True)
+
+        logger.info(f"Нарезаем {len(selection.scenes)} сцен из {transcript.duration / 60:.1f} мин видео")
+
+        clips = []
+        for i, scene in enumerate(selection.scenes):
+            start = max(0.0, scene.start_buffered)
+            end = min(transcript.duration, scene.end_buffered)
+            duration = end - start
+
+            output_path = clips_dir / f"scene_{i + 1:02d}.mp4"
+
+            logger.info(
+                f"  Сцена {i + 1}/{len(selection.scenes)}: "
+                f"{start / 60:.1f}м — {end / 60:.1f}м ({duration:.0f}с)"
+                + (f" [{scene.title}]" if scene.title else "")
+            )
+
+            self._cut_clip(video_path, output_path, start, end)
+
+            clips.append(RawClip(
+                video_id=video_id,
+                scene_index=i,
+                clip_path=str(output_path),
+                start=start,
+                end=end,
+                duration=duration,
+            ))
+
+        logger.info(f"Нарезка сцен завершена: {len(clips)} клипов в {clips_dir}")
         return clips

@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     )
 
     # ---------------------------------------------------------------------------
-    # Claude API
+    # Claude API (legacy, опционально)
     # ---------------------------------------------------------------------------
     anthropic_api_key: str = Field(
         default="",
@@ -34,9 +34,37 @@ class Settings(BaseSettings):
         default=3,
         description="Количество попыток при ошибке API"
     )
+
+    # ---------------------------------------------------------------------------
+    # Groq API (бесплатный, основной)
+    # ---------------------------------------------------------------------------
+    groq_api_key: str = Field(
+        default="",
+        description="Ключ Groq API (бесплатно: console.groq.com)"
+    )
+    groq_model: str = Field(
+        default="llama-3.3-70b-versatile",
+        description="Модель Groq: llama-3.3-70b-versatile или llama-3.1-8b-instant"
+    )
+    groq_max_retries: int = Field(
+        default=3,
+        description="Количество попыток при ошибке Groq API"
+    )
+
+    # ---------------------------------------------------------------------------
+    # Выбор сцен
+    # ---------------------------------------------------------------------------
+    scene_selector_backend: str = Field(
+        default="groq",
+        description="Бэкенд выбора сцен: groq | none (none = нарезка по тишине)"
+    )
     scenes_to_select: int = Field(
         default=5,
         description="Сколько топ-сцен выбирать из видео"
+    )
+    scene_max_tokens_per_chunk: int = Field(
+        default=20000,
+        description="Макс. токенов транскрипта в одном запросе к LLM (для длинных интервью)"
     )
 
     # ---------------------------------------------------------------------------
